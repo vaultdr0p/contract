@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref, but never an in-progress run on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality:
+    name: fmt, clippy, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Pinned so a new stable release cannot turn a green PR red without a
+      # deliberate bump. soroban-sdk 29 requires rustc >= 1.91.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.95.0"
+          components: rustfmt, clippy
+          targets: wasm32v1-none
+
+      - uses: Swatinem/rust-cache@v2.9.3
+
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+      - name: cargo clippy -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: cargo test
+        run: cargo test --all-features
+
+      # Pinned by tag: this action installs the CLI version matching its own
+      # tag, and v26.0.0 is what the contract is developed and verified against.
+      - name: Install Stellar CLI
+        uses: stellar/stellar-cli@v26.0.0
+
+      - name: stellar contract build
+        run: stellar contract build
+
+      # Surfaces the deployable artifact's interface and size on every PR, so a
+      # reviewer can spot an unintended interface or size change without
+      # building locally.
+      - name: Report wasm interface and size
+        run: |
+          stellar contract info interface \
+            --wasm target/wasm32v1-none/release/disbursement_vault.wasm
+          ls -l target/wasm32v1-none/release/disbursement_vault.wasm
+
+      - name: Upload wasm
+        uses: actions/upload-artifact@v7
+        with:
+          name: disbursement-vault-wasm
+          path: target/wasm32v1-none/release/disbursement_vault.wasm
+          if-no-files-found: error
+
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.95.0"
+
+      - uses: Swatinem/rust-cache@v2.9.3
+
+      # Kept in its own job: advisories land independently of our changes, so a
+      # new CVE should never mask a genuine fmt/clippy/test failure. Declared
+      # exceptions, with justification, live in .cargo/audit.toml.
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version ^0.22
+
+      - name: cargo audit
+        run: cargo audit
