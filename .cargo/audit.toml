@@ -1,0 +1,19 @@
+# Read by `cargo audit` when run from the workspace root.
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0387 — crypto-bigint 0.5.5, timing variability in operations
+    # intended to be constant-time. No fix exists in the 0.5.x line.
+    #
+    # Reachable only from the test/simulation host: crypto-bigint arrives via
+    # elliptic-curve -> k256/p256 -> soroban-env-host, which this crate pulls in
+    # through soroban-sdk's `testutils` feature and dev-dependencies.
+    # `cargo tree --target wasm32v1-none -p disbursement-vault` contains no
+    # crypto-bigint, so it is not compiled into the deployed contract, and
+    # signature verification on the network is performed by the validators' host
+    # rather than by this code.
+    #
+    # Drop this entry once soroban-sdk moves to elliptic-curve 0.14. Re-evaluate
+    # immediately if p256/k256 or soroban-env-host ever becomes a normal (non-dev)
+    # dependency of the contract.
+    "RUSTSEC-2026-0387",
+]
