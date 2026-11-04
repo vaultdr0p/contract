@@ -3,6 +3,11 @@
 Thanks for your interest. This is a small Soroban contract repository; the
 conventions below exist so that review stays fast and `main` stays releasable.
 
+Participation is governed by our
+[Code of Conduct](CODE_OF_CONDUCT.md) ([Contributor Covenant](https://www.contributor-covenant.org)
+2.1). Conduct concerns are reported privately, through the same form as
+security reports — not in a public issue.
+
 Security problems are the one exception to everything here — **do not** open a
 public issue or PR for them. Follow [SECURITY.md](SECURITY.md) instead.
 
@@ -27,6 +32,20 @@ you have already written the code, say so in the issue — nobody will ask you
 to throw it away.
 
 Typo and documentation fixes are exempt. Open the PR directly.
+
+### Questions
+
+**Ask in a comment on the issue you want to work on.** There is no separate
+forum — GitHub Discussions is not enabled on this repository — and that is
+deliberate: a question about a change and the change itself belong in the same
+thread, where the answer stays attached to the work it affected.
+
+If your question is not about any existing issue, open a
+[task](.github/ISSUE_TEMPLATE/task.yml) describing what you are trying to do.
+"I want to understand X before proposing a change" is a perfectly good task.
+
+Anything that touches security goes to [SECURITY.md](SECURITY.md) instead,
+even if it is only a question.
 
 ## Toolchain
 
@@ -55,7 +74,7 @@ same order, so a clean run here means a green PR:
 ```sh
 cargo fmt --all --check                          # formatting
 cargo clippy --all-targets --all-features -- -D warnings   # lints, warnings are errors
-cargo test --all-features                        # 45 tests
+cargo test --all-features                        # the test suite
 cargo audit                                      # dependency advisories
 stellar contract build                           # the deployable wasm
 ```
