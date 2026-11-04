@@ -22,12 +22,13 @@ boundary decisions — is in [docs/DESIGN.md](docs/DESIGN.md).
 > disclaimers in [LICENSE](LICENSE).
 
 What *is* true: the safety invariant below is covered by tests, every entry
-point and error variant is exercised by the 45-test suite, and five quality
-gates run on every pull request. None of that substitutes for an audit.
+point and error variant is exercised by the test suite (`cargo test`), and five
+quality gates run on every pull request. None of that substitutes for an audit.
 
 Found a security problem? Report it privately — see
 [SECURITY.md](SECURITY.md). Want to contribute? Start with
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[CONTRIBUTING.md](CONTRIBUTING.md) and our
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Deployment
 
@@ -109,7 +110,7 @@ Requires Rust ≥ 1.91 (CI pins 1.95.0), the `wasm32v1-none` target, and
 ```sh
 rustup target add wasm32v1-none
 
-cargo test                                 # 45 tests
+cargo test                                 # the test suite
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo audit
@@ -193,7 +194,7 @@ exposes the typed `Client`, the `Allocation`/`AllocationStatus` types, and the
 │       ├── error.rs      # typed #[contracterror] enum
 │       ├── events.rs     # typed #[contractevent] structs
 │       ├── storage.rs    # storage accessors and TTL policy
-│       └── test.rs       # 45 tests
+│       └── test.rs       # the test suite
 ├── bindings/disbursement-vault/   # generated TypeScript client
 ├── docs/DESIGN.md
 ├── .cargo/audit.toml
