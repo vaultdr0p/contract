@@ -188,17 +188,32 @@ exposes the typed `Client`, the `Allocation`/`AllocationStatus` types, and the
 ```text
 .
 ├── contracts/disbursement-vault/
+│   ├── Cargo.toml                  # crate manifest
 │   └── src/
-│       ├── lib.rs        # entry points
-│       ├── types.rs      # Config, Allocation, AllocationStatus, DataKey
-│       ├── error.rs      # typed #[contracterror] enum
-│       ├── events.rs     # typed #[contractevent] structs
-│       ├── storage.rs    # storage accessors and TTL policy
-│       └── test.rs       # the test suite
-├── bindings/disbursement-vault/   # generated TypeScript client
-├── docs/DESIGN.md
-├── .cargo/audit.toml
-└── .github/workflows/ci.yml
+│       ├── lib.rs                  # entry points
+│       ├── types.rs                # Config, Allocation, AllocationStatus, DataKey
+│       ├── error.rs                # typed #[contracterror] enum — append-only
+│       ├── events.rs               # typed #[contractevent] structs
+│       ├── storage.rs              # storage accessors and TTL policy
+│       └── test.rs                 # the test suite
+├── bindings/disbursement-vault/    # generated TypeScript client
+├── docs/DESIGN.md                  # design rationale and boundary decisions
+├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.yml          # bug form
+│   │   ├── task.yml                # task form
+│   │   └── config.yml              # blank issues off, links private reporting
+│   ├── pull_request_template.md    # review checklist
+│   └── workflows/ci.yml            # fmt, clippy, test, audit, wasm build
+├── .cargo/audit.toml               # declared cargo audit exceptions
+├── Cargo.toml                      # workspace manifest and release profile
+├── Cargo.lock
+├── .gitignore
+├── README.md
+├── LICENSE                         # Apache-2.0
+├── SECURITY.md                     # how to report a vulnerability privately
+├── CONTRIBUTING.md                 # gates, conventions, issue assignment
+└── CODE_OF_CONDUCT.md              # Contributor Covenant 2.1
 ```
 
 ## License
