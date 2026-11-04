@@ -8,6 +8,27 @@ the admin can cancel unclaimed allocations and reclaim the funds.
 The design rationale — storage layout, error taxonomy, TTL strategy and the
 boundary decisions — is in [docs/DESIGN.md](docs/DESIGN.md).
 
+## Status
+
+> **Testnet only, and not audited.**
+>
+> This contract has had **no external security audit**. It is deployed on
+> Stellar **testnet**, where tokens have no monetary value, and it is **not
+> deployed on mainnet**.
+>
+> **Do not use it to custody real funds.** It is published for review and
+> interface verification. If you deploy it somewhere that holds value, that is
+> against this advice and the risk is yours — see the warranty and liability
+> disclaimers in [LICENSE](LICENSE).
+
+What *is* true: the safety invariant below is covered by tests, every entry
+point and error variant is exercised by the 45-test suite, and five quality
+gates run on every pull request. None of that substitutes for an audit.
+
+Found a security problem? Report it privately — see
+[SECURITY.md](SECURITY.md). Want to contribute? Start with
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Deployment
 
 ### Testnet
@@ -178,3 +199,12 @@ exposes the typed `Client`, the `Allocation`/`AllocationStatus` types, and the
 ├── .cargo/audit.toml
 └── .github/workflows/ci.yml
 ```
+
+## License
+
+[Apache-2.0](LICENSE). Copyright 2026 vaultdr0p contributors.
+
+Note the disclaimers in sections 7 and 8: the software is provided "as is",
+without warranties or conditions of any kind, and the contributors are not
+liable for damages arising from its use. Given that it is unaudited and
+testnet-only, read those as meant literally.
