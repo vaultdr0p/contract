@@ -1,0 +1,12 @@
+# Blank issues are disabled so that security reports cannot arrive as public
+# issues by the path of least resistance. The links below cover the cases the
+# two templates deliberately do not.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/vaultdr0p/contract/security/advisories/new
+    about: Never report a vulnerability in a public issue. This stays private until an advisory is published.
+
+  - name: Indexer, API or web UI problem
+    url: https://github.com/vaultdr0p/backend/issues
+    about: This repository is only the Soroban contract. The backend and frontend track their own issues.

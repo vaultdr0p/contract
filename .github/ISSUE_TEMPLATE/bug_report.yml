@@ -1,0 +1,87 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Is this a security vulnerability?** Do not file it here. Use
+        [private vulnerability reporting](https://github.com/vaultdr0p/contract/security/advisories/new)
+        instead — see [SECURITY.md](https://github.com/vaultdr0p/contract/blob/main/SECURITY.md).
+
+        **Never paste a secret key, seed or mnemonic.** Testnet addresses and
+        transaction hashes are fine.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The actual behaviour, including the exact error or contract error code if there was one.
+      placeholder: |
+        `claim` returned Error(Contract, #11) DeadlinePassed, but the deadline
+        is still two days away.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: >
+        A failing `cargo test` case is the most useful thing you can provide, because it
+        goes straight into the regression suite. Otherwise give the exact
+        `stellar contract invoke` sequence, in order, starting from a fresh deploy.
+      render: shell
+      placeholder: |
+        stellar contract invoke --id C... --source alice --network testnet -- \
+          register --recipient G... --amount 1000
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit or contract ID
+      description: The `main` commit SHA you built, or the deployed contract ID you invoked.
+      placeholder: b5132b5, or CB5HTYC4GZW67ET23SACDCWCCDQ3AKU4TYX7SAUQJSKS6LLQLYA4HG53
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Contract (contracts/disbursement-vault)
+        - Generated TypeScript bindings
+        - CI workflow
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: toolchain
+    attributes:
+      label: Toolchain
+      description: Output of `rustc --version` and `stellar --version`, if you built or invoked locally.
+      placeholder: rustc 1.95.0, stellar 26.0.0
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This is not a security vulnerability (those go through private reporting).
+          required: true
+        - label: This report contains no secret keys, seeds or mnemonics.
+          required: true

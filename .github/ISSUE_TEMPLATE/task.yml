@@ -1,0 +1,82 @@
+name: Task
+description: A change to make — feature, refactor, chore or documentation
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for work to be done. If something is broken, file a
+        [bug report](https://github.com/vaultdr0p/contract/issues/new?template=bug_report.yml)
+        instead.
+
+        Agreeing the approach here is the point of this issue — a change to the
+        contract interface, storage layout or error codes is much harder to
+        redirect once it is written.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What needs doing, and why
+      description: Describe the problem or goal, not just the solution. "Why" is what makes this reviewable.
+      placeholder: |
+        Registering 200 recipients takes 200 transactions, so a disbursement
+        run is slow and expensive. A batch entry point would do it in one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed approach
+      description: Optional, but say so if you have one in mind — including anything you considered and rejected.
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How a reviewer will know this is done. Specific and checkable.
+      placeholder: |
+        - [ ] `register_batch(recipients)` earmarks every allocation atomically
+        - [ ] Rejects the whole batch if any one entry would exceed the balance
+        - [ ] Tests cover the partial-failure case and the backing invariant
+        - [ ] docs/DESIGN.md records why it is all-or-nothing
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Contract (contracts/disbursement-vault)
+        - Tests
+        - Generated TypeScript bindings
+        - CI workflow
+        - Documentation
+    validations:
+      required: true
+
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Does this change the contract interface?
+      description: Entry-point signatures, storage layout, event shapes, or error codes. Error codes are append-only and are never renumbered.
+      options:
+        - "No"
+        - "Yes — and the migration impact is described above"
+        - Not sure
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: >
+            I understand that work starts only once this issue is assigned, and that a
+            behaviour change must include tests in the same PR
+            ([CONTRIBUTING.md](https://github.com/vaultdr0p/contract/blob/main/CONTRIBUTING.md)).
+          required: true
