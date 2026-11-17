@@ -95,6 +95,58 @@ Notes:
 CI additionally prints the wasm interface and size on every PR. Check that
 diff if you did not intend an interface change.
 
+## Coverage
+
+Coverage is not a CI gate, but check it when you add or change a code path.
+It uses [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov):
+
+```sh
+rustup component add llvm-tools --toolchain 1.95.0
+cargo install cargo-llvm-cov --locked
+```
+
+From the repository root:
+
+```sh
+# Summary for the contract, without the test file itself
+cargo llvm-cov -p disbursement-vault --summary-only --ignore-filename-regex 'src/test\.rs'
+
+# The same, plus the line numbers that never ran
+cargo llvm-cov -p disbursement-vault --summary-only --ignore-filename-regex 'src/test\.rs' --show-missing-lines
+
+# Line-by-line HTML report in target/llvm-cov/html/
+cargo llvm-cov -p disbursement-vault --html --ignore-filename-regex 'src/test\.rs'
+```
+
+The first run builds an instrumented copy of the crate under `target/` and
+takes about two minutes. Later runs take seconds.
+
+Current numbers (cargo-llvm-cov 0.8.7, Rust 1.95.0):
+
+| File | Lines | Regions | Functions |
+|---|---|---|---|
+| `lib.rs` | 181 / 182 (99.45%) | 315 / 320 (98.44%) | 15 / 15 |
+| `storage.rs` | 53 / 53 (100%) | 62 / 62 (100%) | 11 / 11 |
+| `types.rs` | 0 / 4 | 0 / 4 | 0 / 4 |
+
+Everything not covered, and why:
+
+- **`lib.rs:177`,** the `Cancelled` arm in `claim`. It cannot be reached on
+  chain: `claim` rejects any call at or after the deadline before it reads the
+  status, and `cancel` only works at or after the deadline. It is kept as
+  defensive code; see
+  [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md#defensive-code-the-cancelled-arm-in-claim).
+- **Four `?` exits on checked arithmetic,** in `claim` (both the
+  `total_allocated` subtraction and the `total_claimed` addition), `cancel` and
+  `withdraw`. These are the only missed regions on lines that otherwise ran.
+  The threat model lists them as untested.
+- **The four `types.rs` lines** are `#[contracttype]` attributes. They count
+  functions the macro generates that the tests never call, not code in this
+  repository.
+
+If your change adds an uncovered line or region, either test it or say in the
+PR why it cannot be reached.
+
 ## Tests are required
 
 **A PR that changes contract behaviour must include tests, in the same PR.**
