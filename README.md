@@ -35,10 +35,28 @@ Found a security problem? Report it privately — see
 
 ## Deployment
 
-### Testnet: v0.1.0
+### Testnet: v0.1.0 (current)
 
-Not deployed yet. v0.1.0 replaces `initialize` with a constructor, so it needs
-a new deployment and a new contract ID; see [CHANGELOG.md](CHANGELOG.md).
+| | |
+|---|---|
+| **Contract ID** | `CDJGWM7I3L4MJJ673AW2O5GX35Y7Z2DKPMGE4HWZFIMXMTI7KECWF2TN` |
+| **Wasm hash** | `0e67cc77f309e6d0fde1f80ce651399672b5811a619f9a66da08dafcb1960bc7` |
+| **Network** | `Test SDF Network ; September 2015` |
+| **Explorer** | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CDJGWM7I3L4MJJ673AW2O5GX35Y7Z2DKPMGE4HWZFIMXMTI7KECWF2TN) |
+| **Token** | native XLM SAC (`CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`) |
+| **Admin** | `GAODBHVR63Z56MVQRBEJSYM2H5423LJ4WAPUUBOFG4JYY72S6ROKVZRX` |
+| **Deadline** | `1802690514` (2027-02-15 11:21:54 UTC) |
+
+Built from commit `9c7b3d4` with `stellar contract build` (stellar-cli 26.0.0,
+Rust 1.95.0). To check that the deployed code matches the source, build that
+commit and compare:
+
+```sh
+sha256sum target/wasm32v1-none/release/disbursement_vault.wasm
+stellar contract fetch --id CDJGWM7I3L4MJJ673AW2O5GX35Y7Z2DKPMGE4HWZFIMXMTI7KECWF2TN --network testnet -o deployed.wasm && sha256sum deployed.wasm
+```
+
+Both should print the wasm hash above.
 
 ### Testnet: v0.0.0 (legacy)
 

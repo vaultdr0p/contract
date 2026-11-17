@@ -31,6 +31,10 @@ bumps the minor version.
   longer returned, and `NotInitialized` (2) is only defensive on a deployed
   v0.1.0 vault. A legacy vault can still return both.
 
+### Deployed
+
+- Testnet: `CDJGWM7I3L4MJJ673AW2O5GX35Y7Z2DKPMGE4HWZFIMXMTI7KECWF2TN`, wasm hash `0e67cc77f309e6d0fde1f80ce651399672b5811a619f9a66da08dafcb1960bc7`, built from `9c7b3d4`.
+
 ### Added
 
 - Tests that deploy the built wasm through the host's real deploy path, to

@@ -16,7 +16,9 @@ An event published from a constructor was also checked on testnet. A
 throwaway contract with the same `Initialized` struct and the same SDK
 published it from `__constructor`, and RPC `getEvents` returned it with the
 same topics, value types and key order as an `initialized` event from the
-earlier `initialize`-based contract.
+earlier `initialize`-based contract. The deployed v0.1.0 vault's own
+`initialized` event, in its deploy transaction at ledger 5,778,180, has the
+same shape.
 
 ## Common shape
 
