@@ -68,8 +68,8 @@ why.
 
 ## Build and test
 
-Run all five locally before you push. These are exactly what CI runs, in the
-same order, so a clean run here means a green PR:
+Run all six locally before you push. These are what CI runs, so a clean run
+here means a green PR:
 
 ```sh
 cargo fmt --all --check                          # formatting
@@ -77,6 +77,7 @@ cargo clippy --all-targets --all-features -- -D warnings   # lints, warnings are
 cargo test --all-features                        # the test suite
 cargo audit                                      # dependency advisories
 stellar contract build                           # the deployable wasm
+cargo test --all-features -- --ignored           # tests against the built wasm
 ```
 
 Notes:
@@ -91,6 +92,9 @@ Notes:
   advisory cannot reach the deployed wasm.
 - `stellar contract build` must succeed, because `cargo test` compiles for the
   host and can pass while the wasm target fails.
+- The `--ignored` tests in `src/test_wasm.rs` deploy the wasm that `stellar
+  contract build` just wrote, so run them after it. They prove what the unit
+  tests cannot, such as the constructor requiring the admin's signature.
 
 CI additionally prints the wasm interface and size on every PR. Check that
 diff if you did not intend an interface change.
@@ -108,14 +112,14 @@ cargo install cargo-llvm-cov --locked
 From the repository root:
 
 ```sh
-# Summary for the contract, without the test file itself
-cargo llvm-cov -p disbursement-vault --summary-only --ignore-filename-regex 'src/test\.rs'
+# Summary for the contract, without the test files
+cargo llvm-cov -p disbursement-vault --summary-only --ignore-filename-regex 'src/test(_wasm)?\.rs'
 
 # The same, plus the line numbers that never ran
-cargo llvm-cov -p disbursement-vault --summary-only --ignore-filename-regex 'src/test\.rs' --show-missing-lines
+cargo llvm-cov -p disbursement-vault --summary-only --ignore-filename-regex 'src/test(_wasm)?\.rs' --show-missing-lines
 
 # Line-by-line HTML report in target/llvm-cov/html/
-cargo llvm-cov -p disbursement-vault --html --ignore-filename-regex 'src/test\.rs'
+cargo llvm-cov -p disbursement-vault --html --ignore-filename-regex 'src/test(_wasm)?\.rs'
 ```
 
 The first run builds an instrumented copy of the crate under `target/` and
@@ -125,13 +129,13 @@ Current numbers (cargo-llvm-cov 0.8.7, Rust 1.95.0):
 
 | File | Lines | Regions | Functions |
 |---|---|---|---|
-| `lib.rs` | 181 / 182 (99.45%) | 315 / 320 (98.44%) | 15 / 15 |
-| `storage.rs` | 53 / 53 (100%) | 62 / 62 (100%) | 11 / 11 |
+| `lib.rs` | 178 / 179 (99.44%) | 311 / 316 (98.42%) | 15 / 15 |
+| `storage.rs` | 50 / 50 (100%) | 57 / 57 (100%) | 10 / 10 |
 | `types.rs` | 0 / 4 | 0 / 4 | 0 / 4 |
 
 Everything not covered, and why:
 
-- **`lib.rs:177`,** the `Cancelled` arm in `claim`. It cannot be reached on
+- **`lib.rs:180`,** the `Cancelled` arm in `claim`. It cannot be reached on
   chain: `claim` rejects any call at or after the deadline before it reads the
   status, and `cancel` only works at or after the deadline. It is kept as
   defensive code; see

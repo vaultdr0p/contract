@@ -25,8 +25,8 @@ in [docs/EVENTS.md](docs/EVENTS.md).
 > disclaimers in [LICENSE](LICENSE).
 
 What *is* true: the safety invariant below is covered by tests, every entry
-point and error variant is exercised by the test suite (`cargo test`), and five
-quality gates run on every pull request. None of that substitutes for an audit.
+point and every error the contract can still return is exercised by the test
+suite (`cargo test`), and six quality gates run on every pull request. None of that substitutes for an audit.
 
 Found a security problem? Report it privately — see
 [SECURITY.md](SECURITY.md). Want to contribute? Start with
@@ -35,7 +35,16 @@ Found a security problem? Report it privately — see
 
 ## Deployment
 
-### Testnet
+### Testnet: v0.1.0
+
+Not deployed yet. v0.1.0 replaces `initialize` with a constructor, so it needs
+a new deployment and a new contract ID; see [CHANGELOG.md](CHANGELOG.md).
+
+### Testnet: v0.0.0 (legacy)
+
+**Legacy.** This instance runs the v0.0.0 interface, which has `initialize`
+instead of a constructor. It stays on testnet, because the contract has no
+upgrade path, but it is not the current version and receives no fixes.
 
 | | |
 |---|---|
@@ -45,9 +54,7 @@ Found a security problem? Report it privately — see
 | **Explorer** | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CB5HTYC4GZW67ET23SACDCWCCDQ3AKU4TYX7SAUQJSKS6LLQLYA4HG53) |
 | **Token** | native XLM SAC (`CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`) |
 
-This instance is **already initialized** and exists for interface verification.
-Deploy your own for anything real — `initialize` can only be called once, so the
-admin and deadline on this one are fixed.
+It is already initialized, so its admin and deadline are fixed.
 
 Mainnet: not deployed.
 
@@ -71,7 +78,7 @@ All amounts are `i128`. Every state-changing function calls `require_auth()`.
 
 | Function | Auth | Effect |
 |---|---|---|
-| `initialize(admin, token, deadline)` | `admin` | Writes config. Callable once; `deadline` is unix seconds and must be in the future |
+| `__constructor(admin, token, deadline)` | `admin` | Writes config, in the deploy transaction. Runs once and cannot be called afterwards. `deadline` is unix seconds and must be in the future |
 | `fund(amount)` | `admin` | Transfers `amount` from the admin into the vault |
 | `register(recipient, amount)` | `admin` | Earmarks `amount`. Only before the deadline, only if it still fits in the balance |
 | `claim(recipient)` | `recipient` | Pays the recipient. Only strictly before the deadline |
@@ -90,10 +97,10 @@ cannot race. "Reclaim" is `cancel` followed by `withdraw`.
 
 | Code | Name | Raised by |
 |---|---|---|
-| 1 | `AlreadyInitialized` | second `initialize` |
-| 2 | `NotInitialized` | any function before `initialize` |
+| 1 | `AlreadyInitialized` | not returned since v0.1.0 (v0.0.0: a second `initialize`) |
+| 2 | `NotInitialized` | not returned by a deployed v0.1.0 vault, which always has a config (v0.0.0: any function before `initialize`) |
 | 3 | `InvalidAmount` | `amount <= 0` |
-| 4 | `InvalidDeadline` | `initialize` with a deadline at or before now |
+| 4 | `InvalidDeadline` | the constructor, with a deadline at or before now. The deployer sees a generic `Error(Context, InvalidAction)`; code 4 appears only in the diagnostic events |
 | 5 | `AllocationExists` | `register` for an address that already has one |
 | 6 | `AllocationNotFound` | `claim`/`cancel` for an unregistered address |
 | 7 | `AlreadyClaimed` | double `claim`, or `cancel` of a claimed allocation |
@@ -118,9 +125,10 @@ cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo audit
 stellar contract build
+cargo test -- --ignored                    # tests against the built wasm
 ```
 
-All five run on every PR via [.github/workflows/ci.yml](.github/workflows/ci.yml).
+All six run on every PR via [.github/workflows/ci.yml](.github/workflows/ci.yml).
 
 `cargo audit` has one declared exception, justified in
 [.cargo/audit.toml](.cargo/audit.toml): RUSTSEC-2026-0387 (`crypto-bigint`)
@@ -134,15 +142,26 @@ stellar contract build
 
 stellar contract deploy \
   --wasm target/wasm32v1-none/release/disbursement_vault.wasm \
-  --source <identity> \
+  --source <admin-identity> \
   --network testnet \
-  --alias disbursement_vault
+  --alias disbursement_vault \
+  -- \
+  --admin <admin-address> \
+  --token <token-sac-address> \
+  --deadline <unix-seconds>
+```
 
-stellar contract invoke --id <contract-id> --source <identity> --network testnet -- \
-  initialize \
-    --admin <admin-address> \
-    --token <token-sac-address> \
-    --deadline <unix-seconds>
+The arguments after `--` go to the constructor, which runs in the same
+transaction as the deploy, so no one can configure the vault before you do.
+The constructor requires the admin's authorization; deploying with the admin
+as `--source` provides it.
+
+Then check the configuration:
+
+```sh
+stellar contract invoke --id <contract-id> --network testnet --source <identity> --send=no -- get_admin
+stellar contract invoke --id <contract-id> --network testnet --source <identity> --send=no -- get_token
+stellar contract invoke --id <contract-id> --network testnet --source <identity> --send=no -- get_deadline
 ```
 
 To get a token's SAC address: `stellar contract id asset --asset <CODE:ISSUER> --network testnet`
@@ -198,7 +217,8 @@ exposes the typed `Client`, the `Allocation`/`AllocationStatus` types, and the
 │       ├── error.rs                # typed #[contracterror] enum — append-only
 │       ├── events.rs               # typed #[contractevent] structs
 │       ├── storage.rs              # storage accessors and TTL policy
-│       └── test.rs                 # the test suite
+│       ├── test.rs                 # the test suite
+│       └── test_wasm.rs            # tests against the built wasm (run with --ignored)
 ├── bindings/disbursement-vault/    # generated TypeScript client
 ├── docs/
 │   ├── DESIGN.md                   # design rationale and boundary decisions
@@ -216,6 +236,7 @@ exposes the typed `Client`, the `Allocation`/`AllocationStatus` types, and the
 ├── Cargo.lock
 ├── .gitignore
 ├── README.md
+├── CHANGELOG.md                    # versions and breaking changes
 ├── LICENSE                         # Apache-2.0
 ├── SECURITY.md                     # how to report a vulnerability privately
 ├── CONTRIBUTING.md                 # gates, conventions, issue assignment

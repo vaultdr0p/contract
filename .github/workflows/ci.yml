@@ -51,6 +51,12 @@ jobs:
       - name: stellar contract build
         run: stellar contract build
 
+      # Tests that deploy the wasm just built, through the host's real deploy
+      # path. They are #[ignore]d in the plain `cargo test` above because the
+      # wasm does not exist yet at that point.
+      - name: cargo test (against the built wasm)
+        run: cargo test --all-features -- --ignored
+
       # Surfaces the deployable artifact's interface and size on every PR, so a
       # reviewer can spot an unintended interface or size change without
       # building locally.

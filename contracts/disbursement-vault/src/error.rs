@@ -8,13 +8,19 @@ use soroban_sdk::contracterror;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
-    /// `initialize` was called on an already-initialized vault.
+    /// Not returned since v0.1.0, which replaced `initialize` with a
+    /// constructor that the host runs only once. Kept so codes stay stable;
+    /// a legacy (v0.0.0) vault can still return it.
     AlreadyInitialized = 1,
-    /// A function was called before `initialize`.
+    /// The vault has no configuration. Since v0.1.0 the constructor always
+    /// writes it, so a deployed vault does not return this; a legacy (v0.0.0)
+    /// vault returned it before `initialize`.
     NotInitialized = 2,
     /// An amount was zero or negative.
     InvalidAmount = 3,
-    /// `initialize` was given a deadline at or before the current ledger time.
+    /// The constructor was given a deadline at or before the current ledger
+    /// time. The deployer sees a generic host error, not this code; see
+    /// `__constructor`.
     InvalidDeadline = 4,
     /// `register` was called for an address that already has an allocation.
     AllocationExists = 5,

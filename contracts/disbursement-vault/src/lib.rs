@@ -38,20 +38,23 @@ fn checked_sub(a: i128, b: i128) -> Result<i128, Error> {
 
 #[contractimpl]
 impl DisbursementVault {
-    /// Configures the vault. Callable exactly once.
+    /// Configures the vault. Runs once, in the same transaction that deploys
+    /// the contract, so there is no window in which another account could
+    /// configure it first. The host refuses to invoke `__constructor` again.
     ///
     /// `deadline` is unix seconds and must be in the future: a deadline in the
     /// past would create a vault in which nothing could ever be registered or
     /// claimed.
-    pub fn initialize(
+    ///
+    /// The host reports any error returned here to the deployer as a generic
+    /// `Error(Context, InvalidAction)`, not as the vault's own error code; the
+    /// code appears only in the diagnostic events.
+    pub fn __constructor(
         env: Env,
         admin: Address,
         token: Address,
         deadline: u64,
     ) -> Result<(), Error> {
-        if storage::has_config(&env) {
-            return Err(Error::AlreadyInitialized);
-        }
         admin.require_auth();
 
         if deadline <= env.ledger().timestamp() {
@@ -307,3 +310,4 @@ impl DisbursementVault {
 }
 
 mod test;
+mod test_wasm;

@@ -1,7 +1,6 @@
 use soroban_sdk::{contracttype, Address};
 
-/// Vault-wide configuration. Written once by `initialize`; its presence in
-/// instance storage is what marks the vault as initialized.
+/// Vault-wide configuration. Written once, by the constructor.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Config {

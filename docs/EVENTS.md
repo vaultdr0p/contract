@@ -12,6 +12,12 @@ Every encoding below was checked against two sources:
   target/wasm32v1-none/release/disbursement_vault.wasm --output json-formatted`
   (the `event_v0` entries).
 
+An event published from a constructor was also checked on testnet. A
+throwaway contract with the same `Initialized` struct and the same SDK
+published it from `__constructor`, and RPC `getEvents` returned it with the
+same topics, value types and key order as an `initialized` event from the
+earlier `initialize`-based contract.
+
 ## Common shape
 
 All six events have the same structure:
@@ -38,7 +44,7 @@ An `Address` can be an account (`G…`) or a contract (`C…`).
 
 | Event | Emitted by | `topics[1]` | `data` keys and types |
 |---|---|---|---|
-| `initialized` | `initialize` | `admin: Address` | `deadline: u64`, `token: Address` |
+| `initialized` | the constructor, in the deploy transaction | `admin: Address` | `deadline: u64`, `token: Address` |
 | `funded` | `fund` | `from: Address` (the admin) | `amount: i128`, `balance: i128` |
 | `registered` | `register` | `recipient: Address` | `amount: i128`, `total_allocated: i128` |
 | `claimed` | `claim` | `recipient: Address` | `amount: i128` |
@@ -92,15 +98,16 @@ Three calls move tokens. In each, the token's own `transfer` event comes
 | `claim` | token `transfer` (vault → recipient), then `claimed` |
 | `withdraw` | token `transfer` (vault → `to`), then `withdrawn` |
 
-`initialize`, `register` and `cancel` move no tokens and emit only the vault
-event.
+The constructor, `register` and `cancel` move no tokens and emit only the
+vault event.
 
 ## Reconstructing state from events
 
 These follow from the code and the events above:
 
 - **Configuration:** `initialized` gives the admin, token and deadline. None of
-  them can change afterwards.
+  them can change afterwards. Since v0.1.0 it is in the same transaction, and
+  so the same ledger, as the contract's creation.
 - **Allocations:** each recipient has at most one `registered`. After that it
   gets at most one of `claimed` or `cancelled`, never both. No event means it is
   still pending.

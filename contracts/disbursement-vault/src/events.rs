@@ -6,7 +6,7 @@
 
 use soroban_sdk::{contractevent, Address};
 
-/// Emitted once, by `initialize`.
+/// Emitted once, by the constructor, in the deploy transaction.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Initialized {
