@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+extern crate std;
+
 use soroban_sdk::{
     testutils::{
         storage::{Instance as _, Persistent as _},
@@ -9,7 +11,10 @@ use soroban_sdk::{
     Address, Env, IntoVal, Symbol,
 };
 
-use crate::{Allocation, AllocationStatus, DisbursementVault, DisbursementVaultClient, Error};
+use crate::{
+    Allocation, AllocationStatus, DisbursementVault, DisbursementVaultArgs,
+    DisbursementVaultClient, Error,
+};
 
 const DAY: u64 = 86_400;
 const START: u64 = 1_000_000;
@@ -29,9 +34,14 @@ struct Fixture<'a> {
 }
 
 impl<'a> Fixture<'a> {
-    /// Registers a SAC and the vault, and sets the ledger clock to `START`.
-    /// Auth is *not* mocked: each test opts in, so no test can pass by
-    /// accident on auth it never exercised.
+    /// Registers a SAC and a vault constructed with `admin`, that SAC and
+    /// `DEADLINE`, with the ledger clock at `START`.
+    ///
+    /// `env.register` approves the constructor's own `require_auth`, so the
+    /// constructor's admin check is proved by the wasm deploy tests in
+    /// `test_wasm.rs` instead. Every later call's auth is *not* mocked: each
+    /// test opts in, so no test can pass by accident on auth it never
+    /// exercised.
     fn new() -> Self {
         let env = Env::default();
         env.ledger().set_timestamp(START);
@@ -43,7 +53,10 @@ impl<'a> Fixture<'a> {
         let sac = env.register_stellar_asset_contract_v2(admin.clone());
         let token_address = sac.address();
 
-        let vault_address = env.register(DisbursementVault, ());
+        let vault_address = env.register(
+            DisbursementVault,
+            DisbursementVaultArgs::__constructor(&admin, &token_address, &DEADLINE),
+        );
 
         Self {
             vault: DisbursementVaultClient::new(&env, &vault_address),
@@ -63,17 +76,9 @@ impl<'a> Fixture<'a> {
         self.sac.mint(&self.admin, &amount);
     }
 
-    /// `initialize` with the default deadline.
-    fn init(&self) {
-        self.env.mock_all_auths();
-        self.vault
-            .initialize(&self.admin, &self.token.address, &DEADLINE);
-    }
-
-    /// Mint, initialize, and fund the vault with `amount`.
-    fn init_and_fund(&self, amount: i128) {
+    /// Mint `amount` to the admin and fund the vault with it.
+    fn fund_with(&self, amount: i128) {
         self.mint_to_admin(amount);
-        self.init();
         self.env.mock_all_auths();
         self.vault.fund(&amount);
     }
@@ -98,13 +103,12 @@ impl<'a> Fixture<'a> {
 }
 
 // ---------------------------------------------------------------------------
-// initialize
+// constructor
 // ---------------------------------------------------------------------------
 
 #[test]
-fn initialize_sets_config_and_zeroes_counters() {
+fn constructor_sets_config_and_zeroes_counters() {
     let f = Fixture::new();
-    f.init();
 
     assert_eq!(f.vault.get_admin(), f.admin);
     assert_eq!(f.vault.get_token(), f.token.address);
@@ -114,78 +118,85 @@ fn initialize_sets_config_and_zeroes_counters() {
     assert_eq!(f.vault.available(), 0);
 }
 
-#[test]
-fn initialize_is_callable_only_once() {
-    let f = Fixture::new();
-    f.init();
-
-    f.env.mock_all_auths();
-    assert_eq!(
-        f.vault
-            .try_initialize(&f.admin, &f.token.address, &DEADLINE)
-            .unwrap_err()
-            .unwrap(),
-        Error::AlreadyInitialized,
-    );
+/// Constructs a vault with `deadline` and returns the panic message, or `None`
+/// if construction succeeded.
+fn construction_failure(deadline: u64) -> Option<std::string::String> {
+    let env = Env::default();
+    env.ledger().set_timestamp(START);
+    let admin = Address::generate(&env);
+    let token = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        env.register(
+            DisbursementVault,
+            DisbursementVaultArgs::__constructor(&admin, &token, &deadline),
+        );
+    }))
+    .err()
+    .map(|e| match e.downcast::<std::string::String>() {
+        Ok(msg) => *msg,
+        Err(e) => std::string::String::from(*e.downcast::<&str>().unwrap()),
+    })
 }
 
-/// A second `initialize` must be rejected even when it tries to install a
-/// *different* admin — otherwise the guard would be bypassable by an attacker
-/// front-running configuration.
+/// The deadline must be strictly in the future. The host reports a failed
+/// constructor to the deployer as the generic `Error(Context, InvalidAction)`;
+/// the vault's own `InvalidDeadline` (#4) appears only in the diagnostic log,
+/// which is where this asserts it.
 #[test]
-fn initialize_cannot_be_hijacked_by_a_different_admin() {
-    let f = Fixture::new();
-    f.init();
-
-    f.env.mock_all_auths();
-    assert_eq!(
-        f.vault
-            .try_initialize(&f.alice, &f.token.address, &DEADLINE)
-            .unwrap_err()
-            .unwrap(),
-        Error::AlreadyInitialized,
-    );
-    assert_eq!(f.vault.get_admin(), f.admin);
-}
-
-#[test]
-fn initialize_rejects_deadline_in_the_past_or_present() {
-    let f = Fixture::new();
-
-    f.env.mock_all_auths();
-    assert_eq!(
-        f.vault
-            .try_initialize(&f.admin, &f.token.address, &(START - 1))
-            .unwrap_err()
-            .unwrap(),
-        Error::InvalidDeadline,
-    );
-
+fn constructor_rejects_a_deadline_in_the_past_or_present() {
     // The bound is exclusive: a deadline exactly at `now` is also invalid.
+    for deadline in [START - 1, START] {
+        let msg = construction_failure(deadline)
+            .unwrap_or_else(|| panic!("deadline {deadline} must be rejected"));
+        assert!(
+            msg.contains("HostError: Error(Context, InvalidAction)"),
+            "deployer-facing error should be generic: {msg}"
+        );
+        assert!(
+            msg.contains("\"constructor invocation has failed with error\", Error(Contract, #4)"),
+            "the underlying error should be InvalidDeadline (#4): {msg}"
+        );
+    }
+    assert_eq!(construction_failure(START + 1), None);
+}
+
+/// The host refuses to invoke a `__`-prefixed function directly, so the
+/// constructor cannot be re-run to replace the admin, token or deadline.
+#[test]
+fn constructor_cannot_be_invoked_again() {
+    let f = Fixture::new();
+
     f.env.mock_all_auths();
-    assert_eq!(
-        f.vault
-            .try_initialize(&f.admin, &f.token.address, &START)
-            .unwrap_err()
-            .unwrap(),
-        Error::InvalidDeadline,
+    let result = f.env.try_invoke_contract::<(), soroban_sdk::Error>(
+        &f.vault_address,
+        &Symbol::new(&f.env, "__constructor"),
+        (f.alice.clone(), f.token.address.clone(), DEADLINE + 1).into_val(&f.env),
     );
+    // The host's "can't invoke a reserved function directly" error.
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_type_and_code(
+            soroban_sdk::xdr::ScErrorType::Context,
+            soroban_sdk::xdr::ScErrorCode::InvalidAction,
+        ))),
+    );
+
+    assert_eq!(f.vault.get_admin(), f.admin);
+    assert_eq!(f.vault.get_deadline(), DEADLINE);
 }
 
+/// Defensive path: a deployed vault always has a config, because the
+/// constructor writes it. If it were ever missing, every function must fail
+/// with the typed `NotInitialized` rather than trap. The config is removed by
+/// hand to reach this state.
 #[test]
-fn initialize_requires_admin_auth() {
+fn every_function_reports_not_initialized_without_config() {
     let f = Fixture::new();
-    // No auth mocked at all.
-    let result = f
-        .vault
-        .try_initialize(&f.admin, &f.token.address, &DEADLINE);
-    assert!(result.is_err(), "initialize must require the admin's auth");
-}
-
-/// Every entry point must refuse to act before `initialize`.
-#[test]
-fn every_function_fails_before_initialize() {
-    let f = Fixture::new();
+    f.env.as_contract(&f.vault_address, || {
+        f.env.storage().instance().remove(&crate::DataKey::Config)
+    });
     f.env.mock_all_auths();
 
     assert_eq!(
@@ -224,8 +235,6 @@ fn every_function_fails_before_initialize() {
         f.vault.try_available().unwrap_err().unwrap(),
         Error::NotInitialized
     );
-    // The allocation getter is infallible and simply reports absence.
-    assert_eq!(f.vault.get_allocation(&f.alice), None);
 }
 
 // ---------------------------------------------------------------------------
@@ -236,7 +245,6 @@ fn every_function_fails_before_initialize() {
 fn fund_moves_tokens_into_the_vault() {
     let f = Fixture::new();
     f.mint_to_admin(1_000);
-    f.init();
 
     f.env.mock_all_auths();
     f.vault.fund(&400);
@@ -250,7 +258,6 @@ fn fund_moves_tokens_into_the_vault() {
 fn fund_is_cumulative() {
     let f = Fixture::new();
     f.mint_to_admin(1_000);
-    f.init();
 
     f.env.mock_all_auths();
     f.vault.fund(&100);
@@ -264,7 +271,6 @@ fn fund_is_cumulative() {
 fn fund_rejects_non_positive_amounts() {
     let f = Fixture::new();
     f.mint_to_admin(1_000);
-    f.init();
 
     for bad in [0_i128, -1, -1_000] {
         f.env.mock_all_auths();
@@ -283,7 +289,6 @@ fn fund_rejects_non_positive_amounts() {
 fn fund_is_allowed_after_the_deadline() {
     let f = Fixture::new();
     f.mint_to_admin(1_000);
-    f.init();
     f.set_time(DEADLINE + 1);
 
     f.env.mock_all_auths();
@@ -299,7 +304,7 @@ fn fund_is_allowed_after_the_deadline() {
 #[test]
 fn register_earmarks_funds() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -320,7 +325,7 @@ fn register_earmarks_funds() {
 #[test]
 fn register_accumulates_across_recipients() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -334,7 +339,7 @@ fn register_accumulates_across_recipients() {
 #[test]
 fn register_rejects_a_duplicate_recipient() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -352,7 +357,7 @@ fn register_rejects_a_duplicate_recipient() {
 #[test]
 fn register_rejects_non_positive_amounts() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     for bad in [0_i128, -1] {
         f.env.mock_all_auths();
@@ -367,7 +372,7 @@ fn register_rejects_non_positive_amounts() {
 #[test]
 fn register_cannot_exceed_the_vault_balance() {
     let f = Fixture::new();
-    f.init_and_fund(500);
+    f.fund_with(500);
 
     f.env.mock_all_auths();
     assert_eq!(
@@ -390,7 +395,7 @@ fn register_cannot_exceed_the_vault_balance() {
 #[test]
 fn register_is_rejected_at_and_after_the_deadline() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     // Inclusive: exactly at the deadline is already too late.
     f.set_time(DEADLINE);
@@ -415,7 +420,7 @@ fn register_is_rejected_at_and_after_the_deadline() {
 #[test]
 fn claim_pays_the_recipient() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -439,7 +444,7 @@ fn claim_pays_the_recipient() {
 #[test]
 fn claim_twice_is_rejected() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -459,7 +464,7 @@ fn claim_twice_is_rejected() {
 #[test]
 fn claim_without_an_allocation_is_rejected() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     assert_eq!(
@@ -471,7 +476,7 @@ fn claim_without_an_allocation_is_rejected() {
 #[test]
 fn claim_is_rejected_at_and_after_the_deadline() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -496,7 +501,7 @@ fn claim_is_rejected_at_and_after_the_deadline() {
 #[test]
 fn claim_after_cancel_is_rejected() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -530,7 +535,7 @@ fn claim_after_cancel_is_rejected() {
 #[test]
 fn cancelled_status_is_reported_by_the_getter() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -555,7 +560,7 @@ fn cancelled_status_is_reported_by_the_getter() {
 #[test]
 fn cancel_releases_the_encumbrance_without_moving_tokens() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -578,7 +583,7 @@ fn cancel_releases_the_encumbrance_without_moving_tokens() {
 #[test]
 fn cancel_before_the_deadline_is_rejected() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -604,7 +609,7 @@ fn cancel_before_the_deadline_is_rejected() {
 #[test]
 fn the_deadline_boundary_belongs_to_cancel() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -625,7 +630,7 @@ fn the_deadline_boundary_belongs_to_cancel() {
 #[test]
 fn cancel_without_an_allocation_is_rejected() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
     f.set_time(DEADLINE);
 
     f.env.mock_all_auths();
@@ -638,7 +643,7 @@ fn cancel_without_an_allocation_is_rejected() {
 #[test]
 fn cancel_twice_is_rejected() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -658,7 +663,7 @@ fn cancel_twice_is_rejected() {
 #[test]
 fn cancel_of_a_claimed_allocation_is_rejected() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -682,7 +687,7 @@ fn cancel_of_a_claimed_allocation_is_rejected() {
 #[test]
 fn withdraw_sends_unencumbered_funds() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.withdraw(&f.bob, &400);
@@ -696,7 +701,7 @@ fn withdraw_sends_unencumbered_funds() {
 #[test]
 fn withdraw_cannot_touch_a_pending_allocation() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &700);
@@ -730,7 +735,7 @@ fn withdraw_cannot_touch_a_pending_allocation() {
 #[test]
 fn withdraw_rejects_non_positive_amounts() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     for bad in [0_i128, -5] {
         f.env.mock_all_auths();
@@ -744,7 +749,6 @@ fn withdraw_rejects_non_positive_amounts() {
 #[test]
 fn withdraw_on_an_empty_vault_is_rejected() {
     let f = Fixture::new();
-    f.init();
 
     f.env.mock_all_auths();
     assert_eq!(
@@ -757,7 +761,7 @@ fn withdraw_on_an_empty_vault_is_rejected() {
 #[test]
 fn cancel_then_withdraw_reclaims_everything() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &600);
@@ -791,7 +795,7 @@ fn cancel_then_withdraw_reclaims_everything() {
 #[test]
 fn admin_functions_require_auth() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     // Registered up front so that every call below would *succeed* if auth were
     // the only thing missing. Otherwise these assertions could pass for an
@@ -832,7 +836,7 @@ fn admin_functions_require_auth() {
 #[test]
 fn non_admin_cannot_call_admin_functions() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_auths(&[MockAuth {
         address: &f.alice,
@@ -854,7 +858,7 @@ fn non_admin_cannot_call_admin_functions() {
 #[test]
 fn claim_requires_the_recipients_own_auth() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -887,7 +891,7 @@ fn claim_requires_the_recipients_own_auth() {
 #[test]
 fn claim_records_the_recipient_as_the_authorizer() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -919,7 +923,7 @@ fn claim_records_the_recipient_as_the_authorizer() {
 #[test]
 fn register_records_the_admin_as_the_authorizer() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -947,16 +951,15 @@ fn register_records_the_admin_as_the_authorizer() {
 /// assertion is made immediately after its call.
 #[test]
 fn every_operation_emits_its_event() {
+    // The constructor runs inside `Fixture::new`'s `register`, so that is the
+    // most recent invocation here.
     let f = Fixture::new();
-    f.mint_to_admin(1_000);
-
-    f.env.mock_all_auths();
-    f.vault.initialize(&f.admin, &f.token.address, &DEADLINE);
     f.assert_emitted(crate::events::Initialized {
         admin: f.admin.clone(),
         token: f.token.address.clone(),
         deadline: DEADLINE,
     });
+    f.mint_to_admin(1_000);
 
     f.env.mock_all_auths();
     f.vault.fund(&1_000);
@@ -1009,7 +1012,7 @@ fn every_operation_emits_its_event() {
 #[test]
 fn a_rejected_call_emits_no_event() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     assert!(f.vault.try_register(&f.alice, &0).is_err());
@@ -1036,7 +1039,7 @@ fn a_rejected_call_emits_no_event() {
 #[test]
 fn allocations_survive_well_past_the_default_ttl() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -1068,7 +1071,7 @@ fn allocations_survive_well_past_the_default_ttl() {
 #[test]
 fn getters_do_not_extend_ttl() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -1125,8 +1128,7 @@ fn state_changing_calls_extend_the_instance_ttl() {
 
     let f = Fixture::new();
     f.mint_to_admin(1_000);
-    f.init();
-    assert_eq!(f.instance_ttl(), INSTANCE_EXTEND, "initialize");
+    assert_eq!(f.instance_ttl(), INSTANCE_EXTEND, "constructor");
 
     f.advance_ledgers(AGE_PAST_THRESHOLD);
     f.env.mock_all_auths();
@@ -1165,7 +1167,7 @@ fn register_claim_and_cancel_extend_the_allocation_ttl() {
     use crate::storage::ALLOCATION_EXTEND;
 
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
@@ -1196,7 +1198,6 @@ fn extension_applies_at_the_30_day_threshold_and_not_above() {
 
     let f = Fixture::new();
     f.mint_to_admin(1_000);
-    f.init();
     f.env.mock_all_auths();
     f.vault.fund(&500);
     f.env.mock_all_auths();
@@ -1234,7 +1235,7 @@ fn extension_applies_at_the_30_day_threshold_and_not_above() {
 #[test]
 fn partial_claims_then_cancel_the_remainder() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &400);
@@ -1269,7 +1270,7 @@ fn partial_claims_then_cancel_the_remainder() {
 #[test]
 fn the_backing_invariant_holds_throughout() {
     let f = Fixture::new();
-    f.init_and_fund(1_000);
+    f.fund_with(1_000);
 
     let assert_invariant = || {
         let balance = f.token.balance(&f.vault_address);
@@ -1316,7 +1317,6 @@ fn the_backing_invariant_holds_throughout() {
 fn counters_use_checked_math() {
     let f = Fixture::new();
     f.mint_to_admin(i128::MAX);
-    f.init();
 
     f.env.mock_all_auths();
     f.vault.fund(&i128::MAX);

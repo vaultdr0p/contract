@@ -29,12 +29,11 @@ pub(crate) const ALLOCATION_EXTEND: u32 = 60 * DAY_IN_LEDGERS;
 
 // --- config ---------------------------------------------------------------
 
-pub(crate) fn has_config(env: &Env) -> bool {
-    env.storage().instance().has(&DataKey::Config)
-}
-
-/// Loads the config, mapping absence to `NotInitialized`. Every state-changing
-/// function except `initialize` starts here.
+/// Loads the config, mapping absence to `NotInitialized`. Every function except
+/// the constructor starts here.
+///
+/// The constructor always writes the config, so on a deployed vault it is never
+/// absent. The typed error is kept as defensive code rather than a panic.
 pub(crate) fn config(env: &Env) -> Result<Config, Error> {
     env.storage()
         .instance()

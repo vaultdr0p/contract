@@ -10,6 +10,16 @@ Do not use it to custody real funds. If you deploy it anywhere that holds
 value, you are doing so against this advice and the risk is entirely yours —
 see the warranty and liability disclaimers in [LICENSE](LICENSE).
 
+## Supported versions
+
+| Version | Supported | Notes |
+|---|---|---|
+| 0.1.x | Yes | Current. Configured by a constructor in the deploy transaction |
+| 0.0.x | No | Legacy. Configured by a separate `initialize` call, which can be front-run. Its testnet instance stays deployed but gets no fixes |
+
+The contract has no upgrade path, so a fix ships as a new version and a new
+deployment, not as an update to an existing contract.
+
 ## Reporting a vulnerability
 
 **Report privately. Do not open a public issue for a security problem.**
@@ -53,7 +63,7 @@ transaction hashes are fine.
 
 | Out of scope | Where it belongs |
 |---|---|
-| The deployed testnet instance's state or balances | Not a vulnerability: it is a throwaway, already-initialized demo holding valueless tokens |
+| The deployed testnet instances' state or balances | Not a vulnerability: they are demos holding valueless tokens |
 | Bugs in `soroban-sdk`, the Stellar host, or other dependencies | Report upstream. Tell us too, if this contract is exploitable because of it |
 | The indexer, API and web UI | The `vaultdr0p/backend` and `vaultdr0p/frontend` repositories |
 | Generated TypeScript in `bindings/` | Regenerated output. Report the contract interface problem behind it |

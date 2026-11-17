@@ -21,7 +21,7 @@ unencumbered balance.
 | anyone | read-only getters |
 
 ```
-initialize(admin, token, deadline)
+__constructor(admin, token, deadline)   runs in the deploy transaction
         │
         ▼
      fund(amount)  ◄──────────┐  admin tops up vault balance
@@ -80,7 +80,7 @@ data.
 
 | Key | Type | Purpose |
 |---|---|---|
-| `DataKey::Config` | `Config` | admin, token, deadline. Its **presence is the initialized flag** |
+| `DataKey::Config` | `Config` | admin, token, deadline. Written by the constructor, so always present on a deployed vault |
 | `DataKey::TotalAllocated` | `i128` | sum of `Pending` allocations (the encumbrance) |
 | `DataKey::TotalClaimed` | `i128` | lifetime claimed, for reporting only |
 
@@ -142,12 +142,16 @@ and return `Result<_, Error>`.
 
 | Function | Auth | Guards | Effect |
 |---|---|---|---|
-| `initialize(admin, token, deadline)` | `admin` | not already initialized; `deadline > now` | writes `Config`, zeroes counters |
-| `fund(amount)` | `admin` | initialized; `amount > 0` | `token.transfer(admin → contract, amount)` |
-| `register(recipient, amount)` | `admin` | initialized; `amount > 0`; `now < deadline`; no existing allocation; `total_allocated + amount <= balance` | writes `Pending` allocation; `total_allocated += amount` |
-| `claim(recipient)` | `recipient` | initialized; allocation exists and is `Pending`; `now < deadline` | `token.transfer(contract → recipient, amount)`; status `Claimed`; `total_allocated -= amount`; `total_claimed += amount` |
-| `cancel(recipient)` | `admin` | initialized; `now >= deadline`; allocation exists and is `Pending` | status `Cancelled`; `total_allocated -= amount` |
-| `withdraw(to, amount)` | `admin` | initialized; `amount > 0`; `amount <= balance - total_allocated` | `token.transfer(contract → to, amount)` |
+| `__constructor(admin, token, deadline)` | `admin` | `deadline > now`. Runs once, in the deploy transaction; the host refuses to invoke it again | writes `Config`, zeroes counters |
+| `fund(amount)` | `admin` | `amount > 0` | `token.transfer(admin → contract, amount)` |
+| `register(recipient, amount)` | `admin` | `amount > 0`; `now < deadline`; no existing allocation; `total_allocated + amount <= balance` | writes `Pending` allocation; `total_allocated += amount` |
+| `claim(recipient)` | `recipient` | allocation exists and is `Pending`; `now < deadline` | `token.transfer(contract → recipient, amount)`; status `Claimed`; `total_allocated -= amount`; `total_claimed += amount` |
+| `cancel(recipient)` | `admin` | `now >= deadline`; allocation exists and is `Pending` | status `Cancelled`; `total_allocated -= amount` |
+| `withdraw(to, amount)` | `admin` | `amount > 0`; `amount <= balance - total_allocated` | `token.transfer(contract → to, amount)` |
+
+Every function after the constructor also loads the config, failing with
+`NotInitialized` if it is missing. On a deployed vault it never is; that check
+is defensive (see [THREAT_MODEL.md](THREAT_MODEL.md)).
 
 ### Read-only (no auth)
 
@@ -238,10 +242,10 @@ pub enum Error {
 
 | Code | Raised by |
 |---|---|
-| `AlreadyInitialized` | second `initialize` |
-| `NotInitialized` | any function before `initialize` |
+| `AlreadyInitialized` | not returned since v0.1.0 (v0.0.0: a second `initialize`) |
+| `NotInitialized` | a missing config: defensive only on v0.1.0 (v0.0.0: any function before `initialize`) |
 | `InvalidAmount` | `amount <= 0` in `fund` / `register` / `withdraw` |
-| `InvalidDeadline` | `initialize` with `deadline <= now` |
+| `InvalidDeadline` | the constructor with `deadline <= now`. The deployer sees the host's generic `Error(Context, InvalidAction)` instead |
 | `AllocationExists` | `register` for an address that already has one |
 | `AllocationNotFound` | `claim` / `cancel` for an unregistered address |
 | `AlreadyClaimed` | double `claim` |
@@ -301,7 +305,7 @@ practice:
 
 - a 60-day bump at registration covers any reasonable deadline, and
 - the recommended operational pattern is to set `deadline` well within one
-  bump window of `initialize`.
+  bump window of deployment.
 
 Because the entry is `persistent`, even a long-archived allocation remains
 provably claimable after restoration — the funds are never stranded. The
@@ -317,7 +321,7 @@ Using `soroban-sdk` `testutils` with `env.register_stellar_asset_contract_v2`
 for a real SAC token, `env.mock_auths` for precise per-address auth
 assertions, and `env.ledger().set_timestamp` to cross the deadline.
 
-**Happy path:** initialize → fund → register two recipients → both claim →
+**Happy path:** deploy (constructor) → fund → register two recipients → both claim →
 balances, counters, and events all correct.
 
 **Explicitly required by the brief:**
@@ -333,8 +337,10 @@ balances, counters, and events all correct.
   `cancel` before it returns `DeadlineNotReached`; the `now == deadline`
   boundary resolves to exactly one of the two.
 
-**Every other branch:** double `initialize`; every function before
-`initialize`; non-positive amounts; `register` over balance; duplicate
+**Every other branch:** the constructor's deadline check, and that it cannot
+be invoked again; its admin authorization, against the built wasm
+(`src/test_wasm.rs`); every function with the config removed (defensive);
+non-positive amounts; `register` over balance; duplicate
 `register`; `claim` / `cancel` for an unknown address; `withdraw` beyond
 the unencumbered balance; and the key safety test — **`withdraw` cannot
 touch a `Pending` allocation's funds**, verified by funding, registering,
