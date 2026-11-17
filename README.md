@@ -122,7 +122,7 @@ cannot race. "Reclaim" is `cancel` followed by `withdraw`.
 | 5 | `AllocationExists` | `register` for an address that already has one |
 | 6 | `AllocationNotFound` | `claim`/`cancel` for an unregistered address |
 | 7 | `AlreadyClaimed` | double `claim`, or `cancel` of a claimed allocation |
-| 8 | `AllocationCancelled` | `claim` or `cancel` after a `cancel` |
+| 8 | `AllocationCancelled` | `cancel` after a `cancel`. (`claim` after a `cancel` fails earlier, with `DeadlinePassed`) |
 | 9 | `InsufficientFunds` | `register` beyond the balance, or `withdraw` beyond the unencumbered balance |
 | 10 | `DeadlineNotReached` | `cancel` before the deadline |
 | 11 | `DeadlinePassed` | `register`/`claim` at or after the deadline |
