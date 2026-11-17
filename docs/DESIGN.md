@@ -182,6 +182,8 @@ and return `Result<_, Error>`.
 Emitted with SDK 29's typed `#[contractevent]` macro, which generates the
 topic/data encoding and gives the tests a strongly-typed assertion target.
 The `recipient` field is a topic so indexers can filter per recipient.
+The exact on-chain encoding, emission order and indexing rules are in
+[EVENTS.md](EVENTS.md).
 
 | Event | Topics | Data |
 |---|---|---|
