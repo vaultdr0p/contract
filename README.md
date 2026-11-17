@@ -6,7 +6,10 @@ with fixed allocations, and each recipient claims their own. After a deadline
 the admin can cancel unclaimed allocations and reclaim the funds.
 
 The design rationale — storage layout, error taxonomy, TTL strategy and the
-boundary decisions — is in [docs/DESIGN.md](docs/DESIGN.md).
+boundary decisions — is in [docs/DESIGN.md](docs/DESIGN.md). What the
+contract defends against, and what it does not, is in
+[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md). The event schema for indexers is
+in [docs/EVENTS.md](docs/EVENTS.md).
 
 ## Status
 
@@ -197,7 +200,10 @@ exposes the typed `Client`, the `Allocation`/`AllocationStatus` types, and the
 │       ├── storage.rs              # storage accessors and TTL policy
 │       └── test.rs                 # the test suite
 ├── bindings/disbursement-vault/    # generated TypeScript client
-├── docs/DESIGN.md                  # design rationale and boundary decisions
+├── docs/
+│   ├── DESIGN.md                   # design rationale and boundary decisions
+│   ├── EVENTS.md                   # event schema and encoding for indexers
+│   └── THREAT_MODEL.md             # what the contract prevents, with tests
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── bug_report.yml          # bug form

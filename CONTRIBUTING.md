@@ -216,3 +216,8 @@ contract interface and regenerate, in the same PR.
 Design rationale — storage layout, error taxonomy, TTL strategy, and the
 boundary decisions — is in [docs/DESIGN.md](docs/DESIGN.md). Update it in the
 same PR when you change one of those.
+
+[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) cites a guard and a test for each
+thing the contract prevents. Update it in the same PR when you rename,
+remove or change one of those. Do the same for
+[docs/EVENTS.md](docs/EVENTS.md) when you change an event.
