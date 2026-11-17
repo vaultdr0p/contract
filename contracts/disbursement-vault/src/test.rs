@@ -2,8 +2,8 @@
 
 use soroban_sdk::{
     testutils::{
-        storage::Persistent as _, Address as _, AuthorizedFunction, Events as _, Ledger, MockAuth,
-        MockAuthInvoke,
+        storage::{Instance as _, Persistent as _},
+        Address as _, AuthorizedFunction, Events as _, Ledger, MockAuth, MockAuthInvoke,
     },
     token::{StellarAssetClient, TokenClient},
     Address, Env, IntoVal, Symbol,
@@ -1078,6 +1078,145 @@ fn getters_do_not_extend_ttl() {
     assert_eq!(ttl_before, ttl_after, "a read must not bump TTL");
 }
 
+impl Fixture<'_> {
+    fn instance_ttl(&self) -> u32 {
+        self.env.as_contract(&self.vault_address, || {
+            self.env.storage().instance().get_ttl()
+        })
+    }
+
+    fn allocation_ttl(&self, recipient: &Address) -> u32 {
+        let key = crate::DataKey::Allocation(recipient.clone());
+        self.env.as_contract(&self.vault_address, || {
+            self.env.storage().persistent().get_ttl(&key)
+        })
+    }
+
+    /// Advances the ledger sequence only; the timestamp, which the deadline
+    /// checks use, is left alone.
+    fn advance_ledgers(&self, ledgers: u32) {
+        self.env
+            .ledger()
+            .with_mut(|li| li.sequence_number += ledgers);
+    }
+}
+
+/// 40 days: enough to take a freshly extended (60-day) entry below the 30-day
+/// threshold, but leaving it well above one day of TTL, so a threshold that
+/// was accidentally shrunk (e.g. `30 + DAY_IN_LEDGERS`) would not bump it.
+const AGE_PAST_THRESHOLD: u32 = 40 * crate::storage::DAY_IN_LEDGERS;
+
+/// Every state-changing function must extend the instance to the full 60 days
+/// once its TTL has dropped below the 30-day threshold. Exact values, so this
+/// fails if the extension is removed or either constant changes.
+#[test]
+fn state_changing_calls_extend_the_instance_ttl() {
+    use crate::storage::INSTANCE_EXTEND;
+
+    let f = Fixture::new();
+    f.mint_to_admin(1_000);
+    f.init();
+    assert_eq!(f.instance_ttl(), INSTANCE_EXTEND, "initialize");
+
+    f.advance_ledgers(AGE_PAST_THRESHOLD);
+    f.env.mock_all_auths();
+    f.vault.fund(&1_000);
+    assert_eq!(f.instance_ttl(), INSTANCE_EXTEND, "fund");
+
+    f.advance_ledgers(AGE_PAST_THRESHOLD);
+    f.env.mock_all_auths();
+    f.vault.register(&f.alice, &300);
+    assert_eq!(f.instance_ttl(), INSTANCE_EXTEND, "register");
+
+    f.env.mock_all_auths();
+    f.vault.register(&f.bob, &200);
+
+    f.advance_ledgers(AGE_PAST_THRESHOLD);
+    f.env.mock_all_auths();
+    f.vault.claim(&f.alice);
+    assert_eq!(f.instance_ttl(), INSTANCE_EXTEND, "claim");
+
+    f.advance_ledgers(AGE_PAST_THRESHOLD);
+    f.env.mock_all_auths();
+    f.vault.withdraw(&f.admin, &100);
+    assert_eq!(f.instance_ttl(), INSTANCE_EXTEND, "withdraw");
+
+    f.set_time(DEADLINE);
+    f.advance_ledgers(AGE_PAST_THRESHOLD);
+    f.env.mock_all_auths();
+    f.vault.cancel(&f.bob);
+    assert_eq!(f.instance_ttl(), INSTANCE_EXTEND, "cancel");
+}
+
+/// Every function that writes an allocation must extend it to the full 60
+/// days once its TTL has dropped below the 30-day threshold.
+#[test]
+fn register_claim_and_cancel_extend_the_allocation_ttl() {
+    use crate::storage::ALLOCATION_EXTEND;
+
+    let f = Fixture::new();
+    f.init_and_fund(1_000);
+
+    f.env.mock_all_auths();
+    f.vault.register(&f.alice, &300);
+    f.env.mock_all_auths();
+    f.vault.register(&f.bob, &200);
+    assert_eq!(f.allocation_ttl(&f.alice), ALLOCATION_EXTEND, "register");
+
+    f.advance_ledgers(AGE_PAST_THRESHOLD);
+    f.env.mock_all_auths();
+    f.vault.claim(&f.alice);
+    assert_eq!(f.allocation_ttl(&f.alice), ALLOCATION_EXTEND, "claim");
+
+    f.set_time(DEADLINE);
+    // Bob's entry aged with Alice's, so it too is below the threshold.
+    f.env.mock_all_auths();
+    f.vault.cancel(&f.bob);
+    assert_eq!(f.allocation_ttl(&f.bob), ALLOCATION_EXTEND, "cancel");
+}
+
+/// The bump applies at exactly 30 days of TTL left and not one ledger above,
+/// matching the host's `ttl <= threshold` rule. Pins both thresholds from
+/// both sides, so a call made while the entry is still healthy stays cheap.
+#[test]
+fn extension_applies_at_the_30_day_threshold_and_not_above() {
+    use crate::storage::{
+        ALLOCATION_EXTEND, ALLOCATION_THRESHOLD, INSTANCE_EXTEND, INSTANCE_THRESHOLD,
+    };
+
+    let f = Fixture::new();
+    f.mint_to_admin(1_000);
+    f.init();
+    f.env.mock_all_auths();
+    f.vault.fund(&500);
+    f.env.mock_all_auths();
+    f.vault.register(&f.alice, &300);
+    f.env.mock_all_auths();
+    f.vault.register(&f.bob, &200);
+
+    // One ledger above the threshold: nothing is bumped.
+    assert_eq!(f.instance_ttl(), INSTANCE_EXTEND);
+    f.advance_ledgers(f.instance_ttl() - INSTANCE_THRESHOLD - 1);
+    assert_eq!(f.instance_ttl(), INSTANCE_THRESHOLD + 1);
+    assert_eq!(f.allocation_ttl(&f.alice), ALLOCATION_THRESHOLD + 1);
+    f.env.mock_all_auths();
+    f.vault.claim(&f.alice);
+    assert_eq!(f.instance_ttl(), INSTANCE_THRESHOLD + 1, "instance above");
+    assert_eq!(
+        f.allocation_ttl(&f.alice),
+        ALLOCATION_THRESHOLD + 1,
+        "allocation above"
+    );
+
+    // Exactly at the threshold: both are bumped back to 60 days.
+    f.advance_ledgers(1);
+    f.set_time(DEADLINE);
+    f.env.mock_all_auths();
+    f.vault.cancel(&f.bob);
+    assert_eq!(f.instance_ttl(), INSTANCE_EXTEND, "instance at");
+    assert_eq!(f.allocation_ttl(&f.bob), ALLOCATION_EXTEND, "allocation at");
+}
+
 // ---------------------------------------------------------------------------
 // integration-flavoured: multiple recipients, partial claims
 // ---------------------------------------------------------------------------
@@ -1177,11 +1316,12 @@ fn counters_use_checked_math() {
     assert_eq!(f.vault.total_allocated(), i128::MAX);
 
     // A second allocation of any size would overflow `total_allocated`.
+    // `register` adds before it compares against the balance, so the error is
+    // exactly `MathOverflow`, not `InsufficientFunds`.
     f.env.mock_all_auths();
-    let err = f.vault.try_register(&f.bob, &1).unwrap_err().unwrap();
-    assert!(
-        err == Error::MathOverflow || err == Error::InsufficientFunds,
-        "expected a typed error, got {err:?}"
+    assert_eq!(
+        f.vault.try_register(&f.bob, &1).unwrap_err().unwrap(),
+        Error::MathOverflow,
     );
 
     // And the vault is still consistent.
