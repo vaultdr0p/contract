@@ -519,10 +519,14 @@ fn claim_after_cancel_is_rejected() {
     );
 }
 
-/// Reaching `AllocationCancelled` requires a vault whose deadline has moved on
-/// past a cancel — only possible across two vaults, since the deadline is
-/// immutable. Here a second vault with a later deadline proves the status
-/// branch itself is wired correctly.
+/// After `cancel`, the getter reports the allocation as `Cancelled` with its
+/// amount unchanged.
+///
+/// This does not exercise `claim`'s `AllocationCancelled` arm. That arm cannot
+/// be reached: `cancel` needs the deadline to have passed, and `claim` rejects
+/// any call at or after the deadline before it reads the status (see
+/// `claim_after_cancel_is_rejected` and the "Defensive code" section of
+/// `docs/THREAT_MODEL.md`).
 #[test]
 fn cancelled_status_is_reported_by_the_getter() {
     let f = Fixture::new();
@@ -1021,8 +1025,14 @@ fn a_rejected_call_emits_no_event() {
 // TTL / archival
 // ---------------------------------------------------------------------------
 
-/// An allocation must survive long past the point a default-TTL entry would
-/// have been archived, because `register` bumps it on write.
+/// An allocation can still be read and claimed after 45 days of ledgers.
+///
+/// This does not prove that `register` extends the allocation's TTL: the test
+/// still passes with `extend_allocation` or `extend_instance` removed, as a
+/// cargo-mutants run showed (#11). The bump is covered by the exact-TTL tests
+/// below: `state_changing_calls_extend_the_instance_ttl`,
+/// `register_claim_and_cancel_extend_the_allocation_ttl` and
+/// `extension_applies_at_the_30_day_threshold_and_not_above`.
 #[test]
 fn allocations_survive_well_past_the_default_ttl() {
     let f = Fixture::new();
@@ -1031,8 +1041,8 @@ fn allocations_survive_well_past_the_default_ttl() {
     f.env.mock_all_auths();
     f.vault.register(&f.alice, &300);
 
-    // Advance 45 days of ledgers: beyond the 30-day bump threshold but inside
-    // the 60-day extension, so the entry must still be live.
+    // Advance 45 days of ledgers: past the 30-day threshold, but inside the
+    // 60-day extension.
     let ledgers = 45 * crate::storage::DAY_IN_LEDGERS;
     f.env.ledger().with_mut(|li| {
         li.sequence_number += ledgers;
