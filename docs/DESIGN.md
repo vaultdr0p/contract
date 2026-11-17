@@ -127,8 +127,9 @@ represents a claim on real funds and must be restorable, so it is
 
 **Why keep a `status` rather than deleting on claim:** retaining the entry
 makes a double-claim distinguishable from a never-registered address
-(`AlreadyClaimed` vs `AllocationNotFound`) and makes a claim-after-cancel
-report `AllocationCancelled`. That precision is worth the storage rent,
+(`AlreadyClaimed` vs `AllocationNotFound`), and makes a second `cancel`
+report `AllocationCancelled`. (A claim after a cancel fails earlier, with
+`DeadlinePassed`.) That precision is worth the storage rent,
 and it leaves an on-chain audit trail of the disbursement.
 
 ---
@@ -249,7 +250,7 @@ pub enum Error {
 | `AllocationExists` | `register` for an address that already has one |
 | `AllocationNotFound` | `claim` / `cancel` for an unregistered address |
 | `AlreadyClaimed` | double `claim` |
-| `AllocationCancelled` | `claim` after `cancel` |
+| `AllocationCancelled` | `cancel` after `cancel` |
 | `InsufficientFunds` | `register` beyond vault balance, or `withdraw` beyond unencumbered balance |
 | `DeadlineNotReached` | `cancel` before the deadline |
 | `DeadlinePassed` | `register` or `claim` at/after the deadline |
