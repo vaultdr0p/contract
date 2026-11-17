@@ -332,7 +332,11 @@ balances, counters, and events all correct.
 - **Double-claim** — second `claim` returns `AlreadyClaimed` and transfers
   nothing.
 - **Claim after cancel** — `cancel` past the deadline, then `claim`
-  returns `AllocationCancelled`.
+  returns `DeadlinePassed`: `claim` checks the deadline before it reads the
+  allocation's status, and a cancel is only possible once the deadline has
+  passed (`claim_after_cancel_is_rejected`). `claim`'s `AllocationCancelled`
+  arm is therefore unreachable; see the threat model's "Defensive code"
+  section.
 - **Expiry** — `claim` at/after the deadline returns `DeadlinePassed`;
   `cancel` before it returns `DeadlineNotReached`; the `now == deadline`
   boundary resolves to exactly one of the two.
